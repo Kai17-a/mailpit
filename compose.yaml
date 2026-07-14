@@ -1,0 +1,36 @@
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    env_file:
+      - .env
+    volumes:
+      - mailpit-data:/data
+    command:
+      - "--database"
+      - "/data/mailpit.db"
+    networks:
+      - mail-network
+
+  webhook-handler:
+    build:
+      context: ./webhook-handler
+    container_name: mailpit-webhook-handler
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - mailpit
+    networks:
+      - mail-network
+
+volumes:
+  mailpit-data:
+
+networks:
+  mail-network:
+    name: mail-network
