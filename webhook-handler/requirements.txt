@@ -1,2 +1,2 @@
-fastapi[standard]
-httpx
+astapi[standard]
+requests

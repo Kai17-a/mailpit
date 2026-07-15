@@ -1,8 +1,9 @@
 import os
 from typing import Any
 
-import httpx
+import requests
 from fastapi import FastAPI, HTTPException, Request, Response
+from starlette.concurrency import run_in_threadpool
 
 app = FastAPI(
     title="Mailpit Discord Webhook",
@@ -93,13 +94,14 @@ async def receive_mail(request: Request) -> Response:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                DISCORD_WEBHOOK_URL,
-                json=discord_payload,
-            )
-            response.raise_for_status()
-    except httpx.HTTPError as exc:
+        response = await run_in_threadpool(
+            requests.post,
+            DISCORD_WEBHOOK_URL,
+            json=discord_payload,
+            timeout=10.0,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
         raise HTTPException(
             status_code=502,
             detail="Failed to send Discord webhook",
