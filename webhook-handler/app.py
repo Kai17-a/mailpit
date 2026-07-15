@@ -1,4 +1,6 @@
 import os
+import re
+from html import unescape
 from typing import Any
 
 import requests
@@ -16,6 +18,7 @@ MAILPIT_PUBLIC_URL = os.getenv(
     "MAILPIT_PUBLIC_URL",
     "http://localhost:8025",
 ).rstrip("/")
+URL_PATTERN = re.compile(r"https?://[^\s<>()\"']+")
 
 
 def format_address(value: Any) -> str:
@@ -38,6 +41,24 @@ def format_address(value: Any) -> str:
     return str(value or "")
 
 
+def extract_urls(*values: Any) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    for value in values:
+        if value is None:
+            continue
+
+        text = unescape(str(value))
+        for match in URL_PATTERN.finditer(text):
+            url = match.group(0).rstrip(".,;:!?)]}")
+            if url and url not in seen:
+                urls.append(url)
+                seen.add(url)
+
+    return urls
+
+
 @app.post("/mail", status_code=204)
 async def receive_mail(request: Request) -> Response:
     try:
@@ -58,34 +79,53 @@ async def receive_mail(request: Request) -> Response:
     sender = format_address(data.get("From") or data.get("from"))
     recipients = format_address(data.get("To") or data.get("to"))
     snippet = data.get("Snippet") or data.get("snippet") or "本文なし"
+    urls = extract_urls(
+        data.get("Text") or data.get("text"),
+        data.get("HTML") or data.get("html"),
+        data.get("Body") or data.get("body"),
+        snippet,
+    )
+    fields = [
+        {
+            "name": "送信元",
+            "value": sender[:1024] or "不明",
+            "inline": False,
+        },
+        {
+            "name": "宛先",
+            "value": recipients[:1024] or "不明",
+            "inline": False,
+        },
+        {
+            "name": "本文",
+            "value": str(snippet)[:1024] or "本文なし",
+            "inline": False,
+        },
+    ]
+
+    if urls:
+        fields.append(
+            {
+                "name": "添付リンク",
+                "value": "\n".join(f"- {url}" for url in urls)[:1024],
+                "inline": False,
+            }
+        )
+
+    fields.append(
+        {
+            "name": "Mailpit",
+            "value": f"[メールを確認する]({MAILPIT_PUBLIC_URL})",
+            "inline": False,
+        }
+    )
 
     discord_payload = {
         "username": "Mailpit",
         "embeds": [
             {
                 "title": str(subject)[:256],
-                "fields": [
-                    {
-                        "name": "送信元",
-                        "value": sender[:1024] or "不明",
-                        "inline": False,
-                    },
-                    {
-                        "name": "宛先",
-                        "value": recipients[:1024] or "不明",
-                        "inline": False,
-                    },
-                    {
-                        "name": "本文",
-                        "value": str(snippet)[:1024] or "本文なし",
-                        "inline": False,
-                    },
-                    {
-                        "name": "Mailpit",
-                        "value": f"[メールを確認する]({MAILPIT_PUBLIC_URL})",
-                        "inline": False,
-                    },
-                ],
+                "fields": fields,
             }
         ],
         "allowed_mentions": {
