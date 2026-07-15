@@ -34,7 +34,7 @@ def format_address(value: Any) -> str:
 
         return address or name
 
-    if isinstance(value, list):
+    if isinstance(value, list | tuple):
         addresses = [format_address(item) for item in value]
         return ", ".join(address for address in addresses if address)
 
@@ -45,18 +45,32 @@ def extract_urls(*values: Any) -> list[str]:
     urls: list[str] = []
     seen: set[str] = set()
 
-    for value in values:
+    for value in iter_text_values(values):
         if value is None:
             continue
 
         text = unescape(str(value))
         for match in URL_PATTERN.finditer(text):
-            url = match.group(0).rstrip(".,;:!?)]}")
+            url = match.group(0).strip().rstrip(".,;:!?)]}")
             if url and url not in seen:
                 urls.append(url)
                 seen.add(url)
 
     return urls
+
+
+def iter_text_values(value: Any):
+    if isinstance(value, dict):
+        for item in value.values():
+            yield from iter_text_values(item)
+        return
+
+    if isinstance(value, list):
+        for item in value:
+            yield from iter_text_values(item)
+        return
+
+    yield value
 
 
 @app.post("/mail", status_code=204)
@@ -79,12 +93,7 @@ async def receive_mail(request: Request) -> Response:
     sender = format_address(data.get("From") or data.get("from"))
     recipients = format_address(data.get("To") or data.get("to"))
     snippet = data.get("Snippet") or data.get("snippet") or "本文なし"
-    urls = extract_urls(
-        data.get("Text") or data.get("text"),
-        data.get("HTML") or data.get("html"),
-        data.get("Body") or data.get("body"),
-        snippet,
-    )
+    urls = extract_urls(data)
     fields = [
         {
             "name": "送信元",
